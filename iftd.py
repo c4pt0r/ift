@@ -16,6 +16,7 @@ import os, sys
 import time
 import toml
 import logging
+import gevent
 
 from daemon import Daemon
 from distutils.dir_util import mkpath
@@ -28,12 +29,39 @@ logger = logging.getLogger(__name__)
 
 RESOURCE_PATH = '/var/ift'
 
+class Profile:
+    def __init__(self, conf):
+        self._conf = conf
+        self._name = conf['profile']
+
+    def exec_if(self):
+        pass
+
+    def exec_then(self):
+        pass
+
+    def exec_else(self):
+        pass
+
+    def loop(self):
+        while True:
+            logger.info("checking %s ..." % self._name)
+            if self.exec_if():
+                logger.info("checking ok, running then-script %s ..." % 
+                        self._name)
+                self.exec_then()
+            else:
+                logger.info("checking fail, running else-script %s ..." % 
+                        self._name)
+                self.exec_else()
+            gevent.sleep(5)
+
 def load_profiles():
     profiles_dir = os.path.join(RESOURCE_PATH, 'profiles')
     mkpath(profiles_dir)
     profiles = []
     for fn in os.listdir(profiles_dir):
-        if not profile_fn.endswith('.toml'):
+        if not fn.endswith('.toml'):
             continue
         profile_fn = os.path.join(profiles_dir, fn)
         with open(profile_fn) as fp:
@@ -43,9 +71,13 @@ def load_profiles():
 
 def main_loop():
     logger.info("start main loop")
-    load_profiles()
-    while True:
-        time.sleep(1)
+    profile_confs = load_profiles()
+    profiles = []
+    for p in profile_confs:
+        profile = Profile(p)
+        profiles.append(gevent.spawn(profile.loop))
+
+    gevent.joinall(profiles)
 
 def daemon(action, pidfile, logfile):
     class _daemon(Daemon):
